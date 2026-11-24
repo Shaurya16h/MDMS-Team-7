@@ -1,33 +1,20 @@
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
+import { roleMenus } from "../layout/roleMenus";
+import type { Role } from "../layout/roleMenus";
 
-const menuItems = [
-  { name: "Dashboard", path: "/dashboard" },
-  { name: "Zone Management", path: "/zones" },
-  { name: "Meter Management", path: "/meters" },
-  { name: "User & Role Management", path: "/users" },
-  { name: "Reports & Analytics", path: "/reports" },
-  { name: "Alerts", path: "/alerts" },
-  { name: "Audit Logs", path: "/audit-logs" },
-  { name: "Settings", path: "/settings" },
-];
-
-export default function Sidebar() {
+export default function Sidebar({ role, open, onNavigate }: {
+  role: Role; open: boolean; onNavigate: () => void;
+}) {
   return (
-    <aside className="sidebar">
+    <aside className={"sidebar" + (open ? " sidebar-open" : "")} id="role-sidebar">
       <h2>MDMS</h2>
-
       <p className="sidebar-subtitle">Meter Data Management</p>
-
-      <nav>
-        {menuItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) => (isActive ? "active" : "")}
-          >
-            {item.name}
-          </NavLink>
+      <nav aria-label="Portal navigation">
+        {roleMenus[role].map(([name, path]) => (
+          <NavLink key={path} to={path} onClick={onNavigate}
+            className={({ isActive }) => isActive ? "active" : ""}>{name}</NavLink>
         ))}
+        <Link to="/login" onClick={onNavigate}>Switch demo role</Link>
       </nav>
     </aside>
   );

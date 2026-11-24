@@ -17,58 +17,43 @@ import {
   Legend
 } from "recharts";
 
-const API = "http://localhost:3000";
+import API from "../../../services/http";
 
-type Row = Record<string, any>;
+type Row = { id: string | number } & Record<string, string | number | boolean | undefined>;
 
-async function getData(endpoint: string) {
-  const response = await fetch(`${API}/${endpoint}`);
-  if (!response.ok) throw new Error("Failed to fetch data");
-  return response.json();
-}
-
-async function deleteData(endpoint: string, id: string | number) {
-  const response = await fetch(`${API}/${endpoint}/${id}`, {
-    method: "DELETE"
-  });
-  if (!response.ok) throw new Error("Delete failed");
-}
-
-async function saveData(endpoint: string, data: Row, id?: string | number) {
-  const response = await fetch(
-    `${API}/${endpoint}${id ? `/${id}` : ""}`,
-    {
-      method: id ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    }
-  );
-  if (!response.ok) throw new Error("Save failed");
-  return response.json();
+async function getData<T>(endpoint: string, signal?: AbortSignal) {
+  const response = await API.get<T>(endpoint, { signal });
+  return response.data;
 }
 
 function useCollection(endpoint: string) {
   const [data, setData] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const refresh = async () => {
-    try {
-      setLoading(true);
-      setError("");
-      setData(await getData(endpoint));
-    } catch {
-      setError("Unable to load data. Check whether JSON Server is running.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    refresh();
-  }, [endpoint]);
+    const controller = new AbortController();
+    getData<Row[]>(endpoint, controller.signal)
+      .then((rows) => {
+        if (!controller.signal.aborted) setData(rows);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError("Unable to load data. Check whether JSON Server is running.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [endpoint, revision]);
 
-  return { data, setData, loading, error, refresh };
+  function refresh() {
+    setLoading(true);
+    setError("");
+    setRevision((value) => value + 1);
+  }
+
+  return { data, loading, error, refresh };
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -174,7 +159,7 @@ function StatCard({
   );
 }
 
-function Status({ value }: { value: any }) {
+function Status({ value }: { value: Row[string] }) {
   const text = String(value ?? "Unknown");
   const active = ["active", "online", "resolved", "paid"].includes(
     text.toLowerCase()
@@ -238,33 +223,12 @@ function DataTable({
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const visible = sorted.slice((page - 1) * pageSize, page * pageSize);
 
-  const addRecord = async () => {
+  const [preview, setPreview] = useState("");
+
+  function addRecord() {
     const name = window.prompt("Enter name:");
-    if (!name?.trim()) return;
-
-    const id = String(Date.now());
-    try {
-      await saveData(endpoint, {
-        id,
-        name: name.trim(),
-        status: "Active",
-        createdAt: new Date().toISOString()
-      });
-      refresh();
-    } catch {
-      alert("Unable to add record");
-    }
-  };
-
-  const removeRecord = async (id: string | number) => {
-    if (!window.confirm("Are you sure you want to delete this record?")) return;
-    try {
-      await deleteData(endpoint, id);
-      refresh();
-    } catch {
-      alert("Unable to delete record");
-    }
-  };
+    if (name?.trim()) setPreview("Add preview ready for " + name.trim() + ".");
+  }
 
   return (
     <div style={styles.page}>
@@ -322,6 +286,7 @@ function DataTable({
         </button>
       </div>
 
+      {preview && <p role="status">{preview}</p>}
       {loading && <p>Loading records...</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
 
@@ -347,7 +312,6 @@ function DataTable({
                       {column.toUpperCase()}
                     </th>
                   ))}
-                  <th style={styles.th}>ACTION</th>
                 </tr>
               </thead>
 
@@ -365,24 +329,12 @@ function DataTable({
                       </td>
                     ))}
 
-                    <td style={styles.td}>
-                      <button
-                        style={{
-                          ...styles.button,
-                          background: "#dc2626",
-                          padding: "6px 10px"
-                        }}
-                        onClick={() => removeRecord(item.id)}
-                      >
-                        Delete
-                      </button>
-                    </td>
                   </tr>
                 ))}
 
                 {visible.length === 0 && (
                   <tr>
-                    <td style={styles.td} colSpan={columns.length + 1}>
+                    <td style={styles.td} colSpan={columns.length}>
                       No records found
                     </td>
                   </tr>
@@ -566,7 +518,7 @@ export function Zones() {
                 <td style={styles.td}>
                   <button
                     style={styles.button}
-                    onClick={() => navigate(`/zones/${zone.id}`)}
+                    onClick={() => navigate(`/enterprise/zones/${zone.id}`)}
                   >
                     View Details
                   </button>
@@ -593,8 +545,8 @@ export function ZoneDetails() {
       try {
         setLoading(true);
         const [zoneData, meterData] = await Promise.all([
-          getData(`zones/${id}`),
-          getData(`meters?zoneId=${id}`)
+          getData<Row>(`zones/${id}`),
+          getData<Row[]>(`meters?zoneId=${id}`)
         ]);
         setZone(zoneData);
         setMeters(meterData);
@@ -616,14 +568,14 @@ export function ZoneDetails() {
   return (
     <div style={styles.page}>
       <PageHeader
-        title={zone.name ?? "Zone Details"}
+        title={String(zone.name ?? "Zone Details")}
         description={`Detailed information for Zone ID: ${id}`}
       />
 
       <div style={styles.cards}>
         <StatCard title="Zone ID" value={zone.id} />
-        <StatCard title="City" value={zone.city ?? zone.location ?? "-"} />
-        <StatCard title="Status" value={zone.status ?? "Unknown"} />
+        <StatCard title="City" value={String(zone.city ?? zone.location ?? "-")} />
+        <StatCard title="Status" value={String(zone.status ?? "Unknown")} />
         <StatCard title="Associated Meters" value={meters.length} />
       </div>
 
@@ -794,35 +746,15 @@ export function AuditLogs() {
 // 9. SETTINGS
 
 export function Settings() {
-  const { data, loading, error, refresh } = useCollection("settings");
-  const [values, setValues] = useState<Row>({});
+  const { data, loading, error } = useCollection("settings?id=1");
+  const [draft, setDraft] = useState<Partial<Row>>({});
+  const [validated, setValidated] = useState(false);
+  const values = { ...data[0], ...draft };
 
-  useEffect(() => {
-    if (data.length > 0) {
-      setValues(data[0]);
-    }
-  }, [data]);
-
-  const handleChange = (key: string, value: string) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleSave = async () => {
-    try {
-      if (values.id) {
-        await saveData("settings", values, values.id);
-      } else {
-        await saveData("settings", {
-          ...values,
-          id: String(Date.now())
-        });
-      }
-      alert("Settings saved successfully!");
-      refresh();
-    } catch {
-      alert("Unable to save settings");
-    }
-  };
+  function handleChange(key: string, value: string) {
+    setDraft((previous) => ({ ...previous, [key]: value }));
+    setValidated(false);
+  }
 
   if (loading) return <div style={styles.page}>Loading settings...</div>;
   if (error) return <div style={styles.page}>{error}</div>;
@@ -852,9 +784,10 @@ export function Settings() {
             </div>
           ))}
 
-        <button style={styles.button} onClick={handleSave}>
-          Save Settings
+        <button style={styles.button} onClick={() => setValidated(true)}>
+          Preview settings
         </button>
+        {validated && <p role="status">Settings preview ready.</p>}
       </div>
     </div>
   );

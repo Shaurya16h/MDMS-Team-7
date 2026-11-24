@@ -1,5 +1,6 @@
 import { faker } from "@faker-js/faker";
 import fs from "node:fs";
+import { addZoneDemoData } from "./add-zone-demo-data.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -248,7 +249,27 @@ const settings = [
 // FINAL DATABASE
 // =====================================
 
+// Existing End-user services still use these three collections.
+const dailyData = [
+  {"id":"1","date":"2026-11-01","units":12.5},
+  {"id":"2","date":"2026-11-02","units":14.2},
+  {"id":"3","date":"2026-11-03","units":11.8},
+];
+
+const weeklyData = [
+  {"id":"1","week":"Week 1","units":85.4},
+  {"id":"2","week":"Week 2","units":92.1},
+];
+
+const monthlyData = [
+  {"id":"1","month":"October","units":370.6},
+  {"id":"2","month":"November","units":348.9},
+];
+
 const database = {
+  dailyData,
+  weeklyData,
+  monthlyData,
   zones,
   users,
   meters,
@@ -260,6 +281,8 @@ const database = {
   auditLogs,
   settings,
 };
+
+addZoneDemoData(database);
 
 // Write data into db.json
 
